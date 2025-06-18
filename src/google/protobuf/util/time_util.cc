@@ -1,32 +1,9 @@
 // Protocol Buffers - Google's data interchange format
 // Copyright 2008 Google Inc.  All rights reserved.
-// https://developers.google.com/protocol-buffers/
 //
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-// notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-// copyright notice, this list of conditions and the following disclaimer
-// in the documentation and/or other materials provided with the
-// distribution.
-//     * Neither the name of Google Inc. nor the names of its
-// contributors may be used to endorse or promote products derived from
-// this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file or at
+// https://developers.google.com/open-source/licenses/bsd
 
 #include "google/protobuf/util/time_util.h"
 
@@ -42,6 +19,7 @@
 #include "absl/strings/string_view.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "google/protobuf/util/internal_timeval.h"  // IWYU pragma: keep for timeval
 
 // Must go after other includes.
 #include "google/protobuf/port_def.inc"
@@ -334,11 +312,13 @@ int64_t TimeUtil::DurationToNanoseconds(const Duration& duration) {
 }
 
 int64_t TimeUtil::DurationToMicroseconds(const Duration& duration) {
-  return RoundTowardZero(DurationToNanoseconds(duration), kNanosPerMicrosecond);
+  return DurationToSeconds(duration) * kMicrosPerSecond +
+         RoundTowardZero(duration.nanos(), kNanosPerMicrosecond);
 }
 
 int64_t TimeUtil::DurationToMilliseconds(const Duration& duration) {
-  return RoundTowardZero(DurationToNanoseconds(duration), kNanosPerMillisecond);
+  return DurationToSeconds(duration) * kMillisPerSecond +
+         RoundTowardZero(duration.nanos(), kNanosPerMillisecond);
 }
 
 int64_t TimeUtil::DurationToSeconds(const Duration& duration) {
@@ -410,25 +390,25 @@ time_t TimeUtil::TimestampToTimeT(const Timestamp& value) {
   return static_cast<time_t>(value.seconds());
 }
 
-Timestamp TimeUtil::TimevalToTimestamp(const timeval& value) {
+Timestamp TimeUtil::TimevalToTimestamp(const struct timeval& value) {
   return CreateNormalized<Timestamp>(value.tv_sec,
                                      value.tv_usec * kNanosPerMicrosecond);
 }
 
-timeval TimeUtil::TimestampToTimeval(const Timestamp& value) {
-  timeval result;
+struct timeval TimeUtil::TimestampToTimeval(const Timestamp& value) {
+  struct timeval result;
   result.tv_sec = value.seconds();
   result.tv_usec = RoundTowardZero(value.nanos(), kNanosPerMicrosecond);
   return result;
 }
 
-Duration TimeUtil::TimevalToDuration(const timeval& value) {
+Duration TimeUtil::TimevalToDuration(const struct timeval& value) {
   return CreateNormalized<Duration>(value.tv_sec,
                                     value.tv_usec * kNanosPerMicrosecond);
 }
 
-timeval TimeUtil::DurationToTimeval(const Duration& value) {
-  timeval result;
+struct timeval TimeUtil::DurationToTimeval(const Duration& value) {
+  struct timeval result;
   result.tv_sec = value.seconds();
   result.tv_usec = RoundTowardZero(value.nanos(), kNanosPerMicrosecond);
   // timeval.tv_usec's range is [0, 1000000)
@@ -446,8 +426,8 @@ timeval TimeUtil::DurationToTimeval(const Duration& value) {
 namespace google {
 namespace protobuf {
 namespace {
-using ::PROTOBUF_NAMESPACE_ID::util::CreateNormalized;
-using ::PROTOBUF_NAMESPACE_ID::util::kNanosPerSecond;
+using ::google::protobuf::util::CreateNormalized;
+using ::google::protobuf::util::kNanosPerSecond;
 
 // Convert a Duration to uint128.
 void ToUint128(const Duration& value, absl::uint128* result, bool* negative) {
@@ -462,7 +442,7 @@ void ToUint128(const Duration& value, absl::uint128* result, bool* negative) {
   }
 }
 
-void ToDuration(const absl::uint128& value, bool negative, Duration* duration) {
+void ToDuration(const absl::uint128 value, bool negative, Duration* duration) {
   int64_t seconds =
       static_cast<int64_t>(absl::Uint128Low64(value / kNanosPerSecond));
   int32_t nanos =
@@ -581,3 +561,5 @@ Duration operator-(const Timestamp& t1, const Timestamp& t2) {
 }
 }  // namespace protobuf
 }  // namespace google
+
+#include "google/protobuf/port_undef.inc"

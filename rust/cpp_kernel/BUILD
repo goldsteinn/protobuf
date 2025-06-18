@@ -1,43 +1,44 @@
 # This package contains Rust protobuf runtime implementation built on top of the C++ backend.
 
-load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
-
-rust_library(
-    name = "cpp",
-    srcs = ["cpp.rs"],
-    visibility = [
-        "//src/google/protobuf:__subpackages__",
-        "//rust:__subpackages__",
-    ],
-)
-
-rust_test(
-    name = "cpp_test",
-    crate = ":cpp",
-    tags = [
-        # TODO(b/270274576): Enable testing on arm once we have a Rust Arm toolchain.
-        "not_build:arm",
-        # TODO(b/243126140): Enable tsan once we support sanitizers with Rust.
-        "notsan",
-        # TODO(b/243126140): Enable msan once we support sanitizers with Rust.
-        "nomsan",
-    ],
-)
+load("@rules_rust//rust:defs.bzl", "rust_library")
 
 cc_library(
     name = "cpp_api",
-    hdrs = ["cpp_api.h"],
+    srcs = [
+        "compare.cc",
+        "debug.cc",
+        "map.cc",
+        "message.cc",
+        "repeated.cc",
+        "strings.cc",
+    ],
+    hdrs = [
+        "compare.h",
+        "debug.h",
+        "rust_alloc_for_cpp_api.h",
+        "serialized_data.h",
+        "strings.h",
+    ],
     visibility = [
-        "//src/google/protobuf:__subpackages__",
         "//rust:__subpackages__",
+        "//src/google/protobuf:__subpackages__",
     ],
     deps = [
-        ":rust_alloc_for_cpp_api",
+        ":rust_alloc_for_cpp_api",  # buildcleaner: keep
         "//src/google/protobuf",
+        "//src/google/protobuf:protobuf_lite",
+        "//src/google/protobuf/io",
+        "@abseil-cpp//absl/functional:overload",
+        "@abseil-cpp//absl/log:absl_check",
+        "@abseil-cpp//absl/log:absl_log",
+        "@abseil-cpp//absl/strings:string_view",
     ],
 )
 
 rust_library(
     name = "rust_alloc_for_cpp_api",
     srcs = ["rust_alloc_for_cpp_api.rs"],
+    visibility = [
+        "//rust:__subpackages__",
+    ],
 )

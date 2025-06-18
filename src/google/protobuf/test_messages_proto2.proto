@@ -1,32 +1,9 @@
 // Protocol Buffers - Google's data interchange format
 // Copyright 2008 Google Inc.  All rights reserved.
-// https://developers.google.com/protocol-buffers/
 //
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-// notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-// copyright notice, this list of conditions and the following disclaimer
-// in the documentation and/or other materials provided with the
-// distribution.
-//     * Neither the name of Google Inc. nor the names of its
-// contributors may be used to endorse or promote products derived from
-// this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file or at
+// https://developers.google.com/open-source/licenses/bsd
 //
 // Test schema for proto2 messages.  This test schema is used by:
 //
@@ -46,6 +23,7 @@ option objc_class_prefix = "Proto2";
 option optimize_for = SPEED;
 
 option cc_enable_arenas = true;
+
 
 // This proto includes every type of field in both singular and repeated
 // forms.
@@ -164,8 +142,10 @@ message TestAllTypesProto2 {
   map<fixed64, fixed64> map_fixed64_fixed64 = 63;
   map<sfixed32, sfixed32> map_sfixed32_sfixed32 = 64;
   map<sfixed64, sfixed64> map_sfixed64_sfixed64 = 65;
+  map<int32, bool> map_int32_bool = 104;
   map<int32, float> map_int32_float = 66;
   map<int32, double> map_int32_double = 67;
+  map<int32, NestedMessage> map_int32_nested_message = 103;
   map<bool, bool> map_bool_bool = 68;
   map<string, string> map_string_string = 69;
   map<string, bytes> map_string_bytes = 70;
@@ -193,6 +173,11 @@ message TestAllTypesProto2 {
   optional group Data = 201 {
     optional int32 group_int32 = 202;
     optional uint32 group_uint32 = 203;
+  }
+
+  optional group MultiWordGroupField = 204 {
+    optional int32 group_int32 = 205;
+    optional uint32 group_uint32 = 206;
   }
 
   // default values
@@ -236,6 +221,8 @@ message TestAllTypesProto2 {
   // Reserved for unknown fields test.
   reserved 1000 to 9999;
 
+  optional MessageSetCorrect message_set_correct = 500;
+
   // message_set test case.
   message MessageSetCorrect {
     option message_set_wire_format = true;
@@ -256,6 +243,19 @@ message TestAllTypesProto2 {
     }
     optional int32 i = 9;
   }
+
+  message ExtensionWithOneof {
+    oneof oneof_field {
+      int32 a = 1;
+      int32 b = 2;
+    }
+    extend MessageSetCorrect {
+      optional ExtensionWithOneof extension_with_oneof = 123456789;
+    }
+  }
+
+  reserved "reserved_field";
+  reserved 999999;
 }
 
 message ForeignMessageProto2 {
@@ -270,6 +270,13 @@ enum ForeignEnumProto2 {
 
 extend TestAllTypesProto2 {
   optional int32 extension_int32 = 120;
+}
+
+extend TestAllTypesProto2 {
+  optional group GroupField = 121 {
+    optional int32 group_int32 = 122;
+    optional uint32 group_uint32 = 123;
+  }
 }
 
 message UnknownToTestAllTypes {
@@ -393,5 +400,20 @@ message TestAllRequiredTypesProto2 {
       optional MessageSetCorrectExtension2 message_set_extension = 4135312;
     }
     required int32 i = 9;
+  }
+}
+
+message TestLargeOneof {
+  message A1 {}
+  message A2 {}
+  message A3 {}
+  message A4 {}
+  message A5 {}
+  oneof large_oneof {
+    A1 a1 = 1;
+    A2 a2 = 2;
+    A3 a3 = 3;
+    A4 a4 = 4;
+    A5 a5 = 5;
   }
 }

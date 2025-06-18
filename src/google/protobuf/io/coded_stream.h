@@ -1,32 +1,9 @@
 // Protocol Buffers - Google's data interchange format
 // Copyright 2008 Google Inc.  All rights reserved.
-// https://developers.google.com/protocol-buffers/
 //
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-// notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-// copyright notice, this list of conditions and the following disclaimer
-// in the documentation and/or other materials provided with the
-// distribution.
-//     * Neither the name of Google Inc. nor the names of its
-// contributors may be used to endorse or promote products derived from
-// this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file or at
+// https://developers.google.com/open-source/licenses/bsd
 
 // Author: kenton@google.com (Kenton Varda)
 //  Based on original Protocol Buffers design by
@@ -46,7 +23,7 @@
 //
 // CodedOutputStream example:
 //   // Write some data to "myfile".  First we write a 4-byte "magic number"
-//   // to identify the file type, then write a length-delimited string.  The
+//   // to identify the file type, then write a length-prefixed string.  The
 //   // string is composed of a varint giving the length followed by the raw
 //   // bytes.
 //   int fd = open("myfile", O_CREAT | O_WRONLY);
@@ -114,11 +91,14 @@
 #include <atomic>
 #include <climits>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <limits>
 #include <string>
 #include <type_traits>
 #include <utility>
+
+#include "absl/base/optimization.h"
 
 #if defined(_MSC_VER) && _MSC_VER >= 1300 && !defined(__INTEL_COMPILER)
 // If MSVC has "/RTCc" set, it will complain about truncating casts at
@@ -126,15 +106,13 @@
 #pragma runtime_checks("c", off)
 #endif
 
+#include "absl/log/absl_log.h"  // Replace with vlog_is_on.h after Abseil LTS 20240722
 
-#include "google/protobuf/stubs/common.h"
-#include "absl/base/attributes.h"
 #include "absl/log/absl_check.h"
 #include "absl/numeric/bits.h"
 #include "absl/strings/cord.h"
 #include "absl/strings/string_view.h"
-#include "google/protobuf/port.h"
-
+#include "google/protobuf/endian.h"
 
 // Must be included last.
 #include "google/protobuf/port_def.inc"
@@ -221,6 +199,8 @@ class PROTOBUF_EXPORT CodedInputStream {
   bool ReadCord(absl::Cord* output, int size);
 
 
+  // Read a 16-bit little-endian integer.
+  bool ReadLittleEndian16(uint16_t* value);
   // Read a 32-bit little-endian integer.
   bool ReadLittleEndian32(uint32_t* value);
   // Read a 64-bit little-endian integer.
@@ -228,6 +208,9 @@ class PROTOBUF_EXPORT CodedInputStream {
 
   // These methods read from an externally provided buffer. The caller is
   // responsible for ensuring that the buffer has sufficient space.
+  // Read a 16-bit little-endian integer.
+  static const uint8_t* ReadLittleEndian16FromArray(const uint8_t* buffer,
+                                                    uint16_t* value);
   // Read a 32-bit little-endian integer.
   static const uint8_t* ReadLittleEndian32FromArray(const uint8_t* buffer,
                                                     uint32_t* value);
@@ -335,7 +318,7 @@ class PROTOBUF_EXPORT CodedInputStream {
   void SetConsumed() { legitimate_message_end_ = true; }
 
   // Limits ----------------------------------------------------------
-  // Limits are used when parsing length-delimited embedded messages.
+  // Limits are used when parsing length-prefixed embedded messages.
   // After the message's length is read, PushLimit() is used to prevent
   // the CodedInputStream from reading beyond that length.  Once the
   // embedded message has been parsed, PopLimit() is called to undo the
@@ -545,6 +528,9 @@ class PROTOBUF_EXPORT CodedInputStream {
   // See EnableAliasing().
   bool aliasing_enabled_;
 
+  // If true, set eager parsing mode to override lazy fields.
+  bool force_eager_parsing_;
+
   // Limits
   Limit current_limit_;  // if position = -1, no limit is applied
 
@@ -611,6 +597,7 @@ class PROTOBUF_EXPORT CodedInputStream {
   bool ReadVarint32Slow(uint32_t* value);
   bool ReadVarint64Slow(uint64_t* value);
   int ReadVarintSizeAsIntSlow();
+  bool ReadLittleEndian16Fallback(uint16_t* value);
   bool ReadLittleEndian32Fallback(uint32_t* value);
   bool ReadLittleEndian64Fallback(uint64_t* value);
 
@@ -674,15 +661,15 @@ class PROTOBUF_EXPORT EpsCopyOutputStream {
   // After this it's guaranteed you can safely write kSlopBytes to ptr. This
   // will never fail! The underlying stream can produce an error. Use HadError
   // to check for errors.
-  PROTOBUF_NODISCARD uint8_t* EnsureSpace(uint8_t* ptr) {
-    if (PROTOBUF_PREDICT_FALSE(ptr >= end_)) {
+  [[nodiscard]] uint8_t* EnsureSpace(uint8_t* ptr) {
+    if (ABSL_PREDICT_FALSE(ptr >= end_)) {
       return EnsureSpaceFallback(ptr);
     }
     return ptr;
   }
 
   uint8_t* WriteRaw(const void* data, int size, uint8_t* ptr) {
-    if (PROTOBUF_PREDICT_FALSE(end_ - ptr < size)) {
+    if (ABSL_PREDICT_FALSE(end_ - ptr < size)) {
       return WriteRawFallback(data, size, ptr);
     }
     std::memcpy(ptr, data, static_cast<unsigned int>(size));
@@ -708,11 +695,11 @@ class PROTOBUF_EXPORT EpsCopyOutputStream {
 #ifndef NDEBUG
   PROTOBUF_NOINLINE
 #endif
-  uint8_t* WriteStringMaybeAliased(uint32_t num, const std::string& s,
+  uint8_t* WriteStringMaybeAliased(uint32_t num, absl::string_view s,
                                    uint8_t* ptr) {
     std::ptrdiff_t size = s.size();
-    if (PROTOBUF_PREDICT_FALSE(
-            size >= 128 || end_ - ptr + 16 - TagSize(num << 3) - 1 < size)) {
+    if (ABSL_PREDICT_FALSE(size >= 128 ||
+                           end_ - ptr + 16 - TagSize(num << 3) - 1 < size)) {
       return WriteStringMaybeAliasedOutline(num, s, ptr);
     }
     ptr = UnsafeVarint((num << 3) | 2, ptr);
@@ -720,7 +707,7 @@ class PROTOBUF_EXPORT EpsCopyOutputStream {
     std::memcpy(ptr, s.data(), size);
     return ptr + size;
   }
-  uint8_t* WriteBytesMaybeAliased(uint32_t num, const std::string& s,
+  uint8_t* WriteBytesMaybeAliased(uint32_t num, absl::string_view s,
                                   uint8_t* ptr) {
     return WriteStringMaybeAliased(num, s, ptr);
   }
@@ -729,8 +716,8 @@ class PROTOBUF_EXPORT EpsCopyOutputStream {
   PROTOBUF_ALWAYS_INLINE uint8_t* WriteString(uint32_t num, const T& s,
                                               uint8_t* ptr) {
     std::ptrdiff_t size = s.size();
-    if (PROTOBUF_PREDICT_FALSE(
-            size >= 128 || end_ - ptr + 16 - TagSize(num << 3) - 1 < size)) {
+    if (ABSL_PREDICT_FALSE(size >= 128 ||
+                           end_ - ptr + 16 - TagSize(num << 3) - 1 < size)) {
       return WriteStringOutline(num, s, ptr);
     }
     ptr = UnsafeVarint((num << 3) | 2, ptr);
@@ -800,6 +787,12 @@ class PROTOBUF_EXPORT EpsCopyOutputStream {
                                               ptr);
   }
 
+  template <int kElementSize>
+  PROTOBUF_ALWAYS_INLINE uint8_t* WriteRawNumericArrayLittleEndian(
+      const void* data, int size, uint8_t* ptr) {
+    return WriteRawLittleEndian<kElementSize>(data, size, ptr);
+  }
+
   // Returns true if there was an underlying I/O error since this object was
   // created.
   bool HadError() const { return had_error_; }
@@ -830,6 +823,29 @@ class PROTOBUF_EXPORT EpsCopyOutputStream {
   int64_t ByteCount(uint8_t* ptr) const;
 
 
+#ifdef PROTOBUF_INTERNAL_V2_EXPERIMENT
+  template <typename ValT, typename CallbackT>
+  uint8_t* WriteNumericArray(uint8_t* ptr, uint32_t count,
+                             CallbackT&& callback) {
+    static_assert(sizeof(ValT) > 1, "Use WriteRaw");
+    static_assert(sizeof(ValT) < kSlopBytes, "");
+
+    int64_t size = count * sizeof(ValT);
+    while (size > 0) {
+      ptr = EnsureSpace(ptr);
+      int64_t chunk_size = std::min<int64_t>(GetSize(ptr), size);
+      int64_t round_down_size = (chunk_size / sizeof(ValT)) * sizeof(ValT);
+      ABSL_DCHECK_GT(round_down_size, 0u);
+
+      callback(ptr, round_down_size);
+
+      size -= round_down_size;
+      ptr += round_down_size;
+    }
+    return ptr;
+  }
+#endif  // PROTOBUF_INTERNAL_V2_EXPERIMENT
+
  private:
   uint8_t* end_;
   uint8_t* buffer_end_ = buffer_;
@@ -838,7 +854,7 @@ class PROTOBUF_EXPORT EpsCopyOutputStream {
   bool had_error_ = false;
   bool aliasing_enabled_ = false;  // See EnableAliasing().
   bool is_serialization_deterministic_;
-  bool skip_check_consistency = false;
+  bool skip_check_consistency_ = false;
 
   uint8_t* EnsureSpaceFallback(uint8_t* ptr);
   inline uint8_t* Next();
@@ -879,9 +895,8 @@ class PROTOBUF_EXPORT EpsCopyOutputStream {
 
   uint8_t* WriteAliasedRaw(const void* data, int size, uint8_t* ptr);
 
-  uint8_t* WriteStringMaybeAliasedOutline(uint32_t num, const std::string& s,
+  uint8_t* WriteStringMaybeAliasedOutline(uint32_t num, absl::string_view s,
                                           uint8_t* ptr);
-  uint8_t* WriteStringOutline(uint32_t num, const std::string& s, uint8_t* ptr);
   uint8_t* WriteStringOutline(uint32_t num, absl::string_view s, uint8_t* ptr);
   uint8_t* WriteCordOutline(const absl::Cord& c, uint8_t* ptr);
 
@@ -913,7 +928,7 @@ class PROTOBUF_EXPORT EpsCopyOutputStream {
   PROTOBUF_ALWAYS_INLINE static uint8_t* UnsafeVarint(T value, uint8_t* ptr) {
     static_assert(std::is_unsigned<T>::value,
                   "Varint serialization must be unsigned");
-    while (PROTOBUF_PREDICT_FALSE(value >= 0x80)) {
+    while (ABSL_PREDICT_FALSE(value >= 0x80)) {
       *ptr = static_cast<uint8_t>(value | 0x80);
       value >>= 7;
       ++ptr;
@@ -924,7 +939,7 @@ class PROTOBUF_EXPORT EpsCopyOutputStream {
 
   PROTOBUF_ALWAYS_INLINE static uint8_t* UnsafeWriteSize(uint32_t value,
                                                          uint8_t* ptr) {
-    while (PROTOBUF_PREDICT_FALSE(value >= 0x80)) {
+    while (ABSL_PREDICT_FALSE(value >= 0x80)) {
       *ptr = static_cast<uint8_t>(value | 0x80);
       value >>= 7;
       ++ptr;
@@ -935,7 +950,7 @@ class PROTOBUF_EXPORT EpsCopyOutputStream {
 
   template <int S>
   uint8_t* WriteRawLittleEndian(const void* data, int size, uint8_t* ptr);
-#if !defined(PROTOBUF_LITTLE_ENDIAN) || \
+#if !defined(ABSL_IS_LITTLE_ENDIAN) || \
     defined(PROTOBUF_DISABLE_LITTLE_ENDIAN_OPT_FOR_TEST)
   uint8_t* WriteRawLittleEndian32(const void* data, int size, uint8_t* ptr);
   uint8_t* WriteRawLittleEndian64(const void* data, int size, uint8_t* ptr);
@@ -983,7 +998,7 @@ template <>
 inline uint8_t* EpsCopyOutputStream::WriteRawLittleEndian<4>(const void* data,
                                                              int size,
                                                              uint8_t* ptr) {
-#if defined(PROTOBUF_LITTLE_ENDIAN) && \
+#if defined(ABSL_IS_LITTLE_ENDIAN) && \
     !defined(PROTOBUF_DISABLE_LITTLE_ENDIAN_OPT_FOR_TEST)
   return WriteRaw(data, size, ptr);
 #else
@@ -994,7 +1009,7 @@ template <>
 inline uint8_t* EpsCopyOutputStream::WriteRawLittleEndian<8>(const void* data,
                                                              int size,
                                                              uint8_t* ptr) {
-#if defined(PROTOBUF_LITTLE_ENDIAN) && \
+#if defined(ABSL_IS_LITTLE_ENDIAN) && \
     !defined(PROTOBUF_DISABLE_LITTLE_ENDIAN_OPT_FOR_TEST)
   return WriteRaw(data, size, ptr);
 #else
@@ -1132,11 +1147,11 @@ class PROTOBUF_EXPORT CodedOutputStream {
                                   uint8_t* target);
 
   // Equivalent to WriteRaw(str.data(), str.size()).
-  void WriteString(const std::string& str);
+  void WriteString(absl::string_view str);
   // Like WriteString()  but writing directly to the target array.
-  static uint8_t* WriteStringToArray(const std::string& str, uint8_t* target);
+  static uint8_t* WriteStringToArray(absl::string_view str, uint8_t* target);
   // Write the varint-encoded size of str followed by str.
-  static uint8_t* WriteStringWithSizeToArray(const std::string& str,
+  static uint8_t* WriteStringWithSizeToArray(absl::string_view str,
                                              uint8_t* target);
 
   // Like WriteString() but writes a Cord.
@@ -1146,19 +1161,26 @@ class PROTOBUF_EXPORT CodedOutputStream {
   static uint8_t* WriteCordToArray(const absl::Cord& cord, uint8_t* target);
 
 
+  // Write a 16-bit little-endian integer.
+  void WriteLittleEndian16(uint16_t value) {
+    cur_ = impl_.EnsureSpace(cur_);
+    SetCur(WriteLittleEndian16ToArray(value, Cur()));
+  }
+  // Like WriteLittleEndian16() but writing directly to the target array.
+  static uint8_t* WriteLittleEndian16ToArray(uint16_t value, uint8_t* target);
   // Write a 32-bit little-endian integer.
   void WriteLittleEndian32(uint32_t value) {
     cur_ = impl_.EnsureSpace(cur_);
     SetCur(WriteLittleEndian32ToArray(value, Cur()));
   }
-  // Like WriteLittleEndian32()  but writing directly to the target array.
+  // Like WriteLittleEndian32() but writing directly to the target array.
   static uint8_t* WriteLittleEndian32ToArray(uint32_t value, uint8_t* target);
   // Write a 64-bit little-endian integer.
   void WriteLittleEndian64(uint64_t value) {
     cur_ = impl_.EnsureSpace(cur_);
     SetCur(WriteLittleEndian64ToArray(value, Cur()));
   }
-  // Like WriteLittleEndian64()  but writing directly to the target array.
+  // Like WriteLittleEndian64() but writing directly to the target array.
   static uint8_t* WriteLittleEndian64ToArray(uint64_t value, uint8_t* target);
 
   // Write an unsigned integer with Varint encoding.  Writing a 32-bit value
@@ -1303,7 +1325,7 @@ class PROTOBUF_EXPORT CodedOutputStream {
 
 inline bool CodedInputStream::ReadVarint32(uint32_t* value) {
   uint32_t v = 0;
-  if (PROTOBUF_PREDICT_TRUE(buffer_ < buffer_end_)) {
+  if (ABSL_PREDICT_TRUE(buffer_ < buffer_end_)) {
     v = *buffer_;
     if (v < 0x80) {
       *value = v;
@@ -1317,7 +1339,7 @@ inline bool CodedInputStream::ReadVarint32(uint32_t* value) {
 }
 
 inline bool CodedInputStream::ReadVarint64(uint64_t* value) {
-  if (PROTOBUF_PREDICT_TRUE(buffer_ < buffer_end_) && *buffer_ < 0x80) {
+  if (ABSL_PREDICT_TRUE(buffer_ < buffer_end_) && *buffer_ < 0x80) {
     *value = *buffer_;
     Advance(1);
     return true;
@@ -1328,7 +1350,7 @@ inline bool CodedInputStream::ReadVarint64(uint64_t* value) {
 }
 
 inline bool CodedInputStream::ReadVarintSizeAsInt(int* value) {
-  if (PROTOBUF_PREDICT_TRUE(buffer_ < buffer_end_)) {
+  if (ABSL_PREDICT_TRUE(buffer_ < buffer_end_)) {
     int v = *buffer_;
     if (v < 0x80) {
       *value = v;
@@ -1341,45 +1363,40 @@ inline bool CodedInputStream::ReadVarintSizeAsInt(int* value) {
 }
 
 // static
+inline const uint8_t* CodedInputStream::ReadLittleEndian16FromArray(
+    const uint8_t* buffer, uint16_t* value) {
+  memcpy(value, buffer, sizeof(*value));
+  *value = google::protobuf::internal::little_endian::ToHost(*value);
+  return buffer + sizeof(*value);
+}
+// static
 inline const uint8_t* CodedInputStream::ReadLittleEndian32FromArray(
     const uint8_t* buffer, uint32_t* value) {
-#if defined(PROTOBUF_LITTLE_ENDIAN) && \
-    !defined(PROTOBUF_DISABLE_LITTLE_ENDIAN_OPT_FOR_TEST)
   memcpy(value, buffer, sizeof(*value));
+  *value = google::protobuf::internal::little_endian::ToHost(*value);
   return buffer + sizeof(*value);
-#else
-  *value = (static_cast<uint32_t>(buffer[0])) |
-           (static_cast<uint32_t>(buffer[1]) << 8) |
-           (static_cast<uint32_t>(buffer[2]) << 16) |
-           (static_cast<uint32_t>(buffer[3]) << 24);
-  return buffer + sizeof(*value);
-#endif
 }
 // static
 inline const uint8_t* CodedInputStream::ReadLittleEndian64FromArray(
     const uint8_t* buffer, uint64_t* value) {
-#if defined(PROTOBUF_LITTLE_ENDIAN) && \
-    !defined(PROTOBUF_DISABLE_LITTLE_ENDIAN_OPT_FOR_TEST)
   memcpy(value, buffer, sizeof(*value));
+  *value = google::protobuf::internal::little_endian::ToHost(*value);
   return buffer + sizeof(*value);
-#else
-  uint32_t part0 = (static_cast<uint32_t>(buffer[0])) |
-                   (static_cast<uint32_t>(buffer[1]) << 8) |
-                   (static_cast<uint32_t>(buffer[2]) << 16) |
-                   (static_cast<uint32_t>(buffer[3]) << 24);
-  uint32_t part1 = (static_cast<uint32_t>(buffer[4])) |
-                   (static_cast<uint32_t>(buffer[5]) << 8) |
-                   (static_cast<uint32_t>(buffer[6]) << 16) |
-                   (static_cast<uint32_t>(buffer[7]) << 24);
-  *value = static_cast<uint64_t>(part0) | (static_cast<uint64_t>(part1) << 32);
-  return buffer + sizeof(*value);
-#endif
+}
+
+inline bool CodedInputStream::ReadLittleEndian16(uint16_t* value) {
+  if (ABSL_PREDICT_TRUE(BufferSize() >= static_cast<int>(sizeof(*value)))) {
+    buffer_ = ReadLittleEndian16FromArray(buffer_, value);
+    return true;
+  } else {
+    return ReadLittleEndian16Fallback(value);
+  }
 }
 
 inline bool CodedInputStream::ReadLittleEndian32(uint32_t* value) {
-#if defined(PROTOBUF_LITTLE_ENDIAN) && \
+#if defined(ABSL_IS_LITTLE_ENDIAN) && \
     !defined(PROTOBUF_DISABLE_LITTLE_ENDIAN_OPT_FOR_TEST)
-  if (PROTOBUF_PREDICT_TRUE(BufferSize() >= static_cast<int>(sizeof(*value)))) {
+  if (ABSL_PREDICT_TRUE(BufferSize() >= static_cast<int>(sizeof(*value)))) {
     buffer_ = ReadLittleEndian32FromArray(buffer_, value);
     return true;
   } else {
@@ -1391,9 +1408,9 @@ inline bool CodedInputStream::ReadLittleEndian32(uint32_t* value) {
 }
 
 inline bool CodedInputStream::ReadLittleEndian64(uint64_t* value) {
-#if defined(PROTOBUF_LITTLE_ENDIAN) && \
+#if defined(ABSL_IS_LITTLE_ENDIAN) && \
     !defined(PROTOBUF_DISABLE_LITTLE_ENDIAN_OPT_FOR_TEST)
-  if (PROTOBUF_PREDICT_TRUE(BufferSize() >= static_cast<int>(sizeof(*value)))) {
+  if (ABSL_PREDICT_TRUE(BufferSize() >= static_cast<int>(sizeof(*value)))) {
     buffer_ = ReadLittleEndian64FromArray(buffer_, value);
     return true;
   } else {
@@ -1406,7 +1423,7 @@ inline bool CodedInputStream::ReadLittleEndian64(uint64_t* value) {
 
 inline uint32_t CodedInputStream::ReadTagNoLastTag() {
   uint32_t v = 0;
-  if (PROTOBUF_PREDICT_TRUE(buffer_ < buffer_end_)) {
+  if (ABSL_PREDICT_TRUE(buffer_ < buffer_end_)) {
     v = *buffer_;
     if (v < 0x80) {
       Advance(1);
@@ -1423,9 +1440,9 @@ inline std::pair<uint32_t, bool> CodedInputStream::ReadTagWithCutoffNoLastTag(
   // constant, and things like "cutoff >= kMax1ByteVarint" to be evaluated at
   // compile time.
   uint32_t first_byte_or_zero = 0;
-  if (PROTOBUF_PREDICT_TRUE(buffer_ < buffer_end_)) {
+  if (ABSL_PREDICT_TRUE(buffer_ < buffer_end_)) {
     // Hot case: buffer_ non_empty, buffer_[0] in [1, 128).
-    // TODO(gpike): Is it worth rearranging this? E.g., if the number of fields
+    // TODO: Is it worth rearranging this? E.g., if the number of fields
     // is large enough then is it better to check for the two-byte case first?
     first_byte_or_zero = buffer_[0];
     if (static_cast<int8_t>(buffer_[0]) > 0) {
@@ -1437,8 +1454,8 @@ inline std::pair<uint32_t, bool> CodedInputStream::ReadTagWithCutoffNoLastTag(
     // Other hot case: cutoff >= 0x80, buffer_ has at least two bytes available,
     // and tag is two bytes.  The latter is tested by bitwise-and-not of the
     // first byte and the second byte.
-    if (cutoff >= 0x80 && PROTOBUF_PREDICT_TRUE(buffer_ + 1 < buffer_end_) &&
-        PROTOBUF_PREDICT_TRUE((buffer_[0] & ~buffer_[1]) >= 0x80)) {
+    if (cutoff >= 0x80 && ABSL_PREDICT_TRUE(buffer_ + 1 < buffer_end_) &&
+        ABSL_PREDICT_TRUE((buffer_[0] & ~buffer_[1]) >= 0x80)) {
       const uint32_t kMax2ByteVarint = (0x7f << 7) + 0x7f;
       uint32_t tag = (1u << 7) * buffer_[1] + (buffer_[0] - 0x80);
       Advance(2);
@@ -1467,15 +1484,14 @@ inline bool CodedInputStream::ConsumedEntireMessage() {
 
 inline bool CodedInputStream::ExpectTag(uint32_t expected) {
   if (expected < (1 << 7)) {
-    if (PROTOBUF_PREDICT_TRUE(buffer_ < buffer_end_) &&
-        buffer_[0] == expected) {
+    if (ABSL_PREDICT_TRUE(buffer_ < buffer_end_) && buffer_[0] == expected) {
       Advance(1);
       return true;
     } else {
       return false;
     }
   } else if (expected < (1 << 14)) {
-    if (PROTOBUF_PREDICT_TRUE(BufferSize() >= 2) &&
+    if (ABSL_PREDICT_TRUE(BufferSize() >= 2) &&
         buffer_[0] == static_cast<uint8_t>(expected | 0x80) &&
         buffer_[1] == static_cast<uint8_t>(expected >> 7)) {
       Advance(2);
@@ -1576,6 +1592,7 @@ inline CodedInputStream::CodedInputStream(ZeroCopyInputStream* input)
       last_tag_(0),
       legitimate_message_end_(false),
       aliasing_enabled_(false),
+      force_eager_parsing_(false),
       current_limit_(std::numeric_limits<int32_t>::max()),
       buffer_size_after_limit_(0),
       total_bytes_limit_(kDefaultTotalBytesLimit),
@@ -1596,6 +1613,7 @@ inline CodedInputStream::CodedInputStream(const uint8_t* buffer, int size)
       last_tag_(0),
       legitimate_message_end_(false),
       aliasing_enabled_(false),
+      force_eager_parsing_(false),
       current_limit_(size),
       buffer_size_after_limit_(0),
       total_bytes_limit_(kDefaultTotalBytesLimit),
@@ -1643,7 +1661,7 @@ template <class Stream>
 inline void CodedOutputStream::InitEagerly(Stream* stream) {
   void* data;
   int size;
-  if (PROTOBUF_PREDICT_TRUE(stream->Next(&data, &size) && size > 0)) {
+  if (ABSL_PREDICT_TRUE(stream->Next(&data, &size) && size > 0)) {
     cur_ = impl_.SetInitialBuffer(data, size);
   }
 }
@@ -1667,9 +1685,16 @@ inline uint8_t* CodedOutputStream::WriteVarint32SignExtendedToArray(
   return WriteVarint64ToArray(static_cast<uint64_t>(value), target);
 }
 
+inline uint8_t* CodedOutputStream::WriteLittleEndian16ToArray(uint16_t value,
+                                                              uint8_t* target) {
+  uint16_t little_endian_value = google::protobuf::internal::little_endian::ToHost(value);
+  memcpy(target, &little_endian_value, sizeof(value));
+  return target + sizeof(value);
+}
+
 inline uint8_t* CodedOutputStream::WriteLittleEndian32ToArray(uint32_t value,
                                                               uint8_t* target) {
-#if defined(PROTOBUF_LITTLE_ENDIAN) && \
+#if defined(ABSL_IS_LITTLE_ENDIAN) && \
     !defined(PROTOBUF_DISABLE_LITTLE_ENDIAN_OPT_FOR_TEST)
   memcpy(target, &value, sizeof(value));
 #else
@@ -1683,7 +1708,7 @@ inline uint8_t* CodedOutputStream::WriteLittleEndian32ToArray(uint32_t value,
 
 inline uint8_t* CodedOutputStream::WriteLittleEndian64ToArray(uint64_t value,
                                                               uint8_t* target) {
-#if defined(PROTOBUF_LITTLE_ENDIAN) && \
+#if defined(ABSL_IS_LITTLE_ENDIAN) && \
     !defined(PROTOBUF_DISABLE_LITTLE_ENDIAN_OPT_FOR_TEST)
   memcpy(target, &value, sizeof(value));
 #else
@@ -1721,38 +1746,68 @@ inline uint8_t* CodedOutputStream::WriteTagToArray(uint32_t value,
   return WriteVarint32ToArray(value, target);
 }
 
+#if (defined(__x86__) || defined(__x86_64__) || defined(_M_IX86) || \
+     defined(_M_X64)) &&                                            \
+    !(defined(__LZCNT__) || defined(__AVX2__))
+// X86 CPUs lacking the lzcnt instruction are faster with the bsr-based
+// implementation. MSVC does not define __LZCNT__, the nearest option that
+// it interprets as lzcnt availability is __AVX2__.
+#define PROTOBUF_CODED_STREAM_H_PREFER_BSR 1
+#else
+#define PROTOBUF_CODED_STREAM_H_PREFER_BSR 0
+#endif
 inline size_t CodedOutputStream::VarintSize32(uint32_t value) {
-  // This computes value == 0 ? 1 : floor(log2(value)) / 7 + 1
-  // Use an explicit multiplication to implement the divide of
-  // a number in the 1..31 range.
-  //
+#if PROTOBUF_CODED_STREAM_H_PREFER_BSR
   // Explicit OR 0x1 to avoid calling absl::countl_zero(0), which
-  // requires a branch to check for on many platforms.
-  uint32_t log2value = 31 - absl::countl_zero(value | 0x1);
-  return static_cast<size_t>((log2value * 9 + 73) / 64);
+  // requires a branch to check for on platforms without a clz instruction.
+  uint32_t log2value = (std::numeric_limits<uint32_t>::digits - 1) -
+                       absl::countl_zero(value | 0x1);
+  return static_cast<size_t>((log2value * 9 + (64 + 9)) / 64);
+#else
+  uint32_t clz = absl::countl_zero(value);
+  return static_cast<size_t>(
+      ((std::numeric_limits<uint32_t>::digits * 9 + 64) - (clz * 9)) / 64);
+#endif
 }
 
 inline size_t CodedOutputStream::VarintSize32PlusOne(uint32_t value) {
   // Same as above, but one more.
-  uint32_t log2value = 31 - absl::countl_zero(value | 0x1);
-  return static_cast<size_t>((log2value * 9 + 73 + 64) / 64);
+#if PROTOBUF_CODED_STREAM_H_PREFER_BSR
+  uint32_t log2value = (std::numeric_limits<uint32_t>::digits - 1) -
+                       absl::countl_zero(value | 0x1);
+  return static_cast<size_t>((log2value * 9 + (64 + 9) + 64) / 64);
+#else
+  uint32_t clz = absl::countl_zero(value);
+  return static_cast<size_t>(
+      ((std::numeric_limits<uint32_t>::digits * 9 + 64 + 64) - (clz * 9)) / 64);
+#endif
 }
 
 inline size_t CodedOutputStream::VarintSize64(uint64_t value) {
-  // This computes value == 0 ? 1 : floor(log2(value)) / 7 + 1
-  // Use an explicit multiplication to implement the divide of
-  // a number in the 1..63 range.
-  //
+#if PROTOBUF_CODED_STREAM_H_PREFER_BSR
   // Explicit OR 0x1 to avoid calling absl::countl_zero(0), which
-  // requires a branch to check for on many platforms.
-  uint32_t log2value = 63 - absl::countl_zero(value | 0x1);
-  return static_cast<size_t>((log2value * 9 + 73) / 64);
+  // requires a branch to check for on platforms without a clz instruction.
+  uint32_t log2value = (std::numeric_limits<uint64_t>::digits - 1) -
+                       absl::countl_zero(value | 0x1);
+  return static_cast<size_t>((log2value * 9 + (64 + 9)) / 64);
+#else
+  uint32_t clz = absl::countl_zero(value);
+  return static_cast<size_t>(
+      ((std::numeric_limits<uint64_t>::digits * 9 + 64) - (clz * 9)) / 64);
+#endif
 }
 
 inline size_t CodedOutputStream::VarintSize64PlusOne(uint64_t value) {
   // Same as above, but one more.
-  uint32_t log2value = 63 - absl::countl_zero(value | 0x1);
-  return static_cast<size_t>((log2value * 9 + 73 + 64) / 64);
+#if PROTOBUF_CODED_STREAM_H_PREFER_BSR
+  uint32_t log2value = (std::numeric_limits<uint64_t>::digits - 1) -
+                       absl::countl_zero(value | 0x1);
+  return static_cast<size_t>((log2value * 9 + (64 + 9) + 64) / 64);
+#else
+  uint32_t clz = absl::countl_zero(value);
+  return static_cast<size_t>(
+      ((std::numeric_limits<uint64_t>::digits * 9 + 64 + 64) - (clz * 9)) / 64);
+#endif
 }
 
 inline size_t CodedOutputStream::VarintSize32SignExtended(int32_t value) {
@@ -1763,8 +1818,9 @@ inline size_t CodedOutputStream::VarintSize32SignExtendedPlusOne(
     int32_t value) {
   return VarintSize64PlusOne(static_cast<uint64_t>(int64_t{value}));
 }
+#undef PROTOBUF_CODED_STREAM_H_PREFER_BSR
 
-inline void CodedOutputStream::WriteString(const std::string& str) {
+inline void CodedOutputStream::WriteString(absl::string_view str) {
   WriteRaw(str.data(), static_cast<int>(str.size()));
 }
 
@@ -1779,7 +1835,7 @@ inline uint8_t* CodedOutputStream::WriteRawToArray(const void* data, int size,
   return target + size;
 }
 
-inline uint8_t* CodedOutputStream::WriteStringToArray(const std::string& str,
+inline uint8_t* CodedOutputStream::WriteStringToArray(absl::string_view str,
                                                       uint8_t* target) {
   return WriteRawToArray(str.data(), static_cast<int>(str.size()), target);
 }

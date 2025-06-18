@@ -29,7 +29,7 @@ namespace ProtobufTestMessages.Proto3 {
             "dWYvYW55LnByb3RvGh5nb29nbGUvcHJvdG9idWYvZHVyYXRpb24ucHJvdG8a",
             "IGdvb2dsZS9wcm90b2J1Zi9maWVsZF9tYXNrLnByb3RvGhxnb29nbGUvcHJv",
             "dG9idWYvc3RydWN0LnByb3RvGh9nb29nbGUvcHJvdG9idWYvdGltZXN0YW1w",
-            "LnByb3RvGh5nb29nbGUvcHJvdG9idWYvd3JhcHBlcnMucHJvdG8isUUKElRl",
+            "LnByb3RvGh5nb29nbGUvcHJvdG9idWYvd3JhcHBlcnMucHJvdG8iy0UKElRl",
             "c3RBbGxUeXBlc1Byb3RvMxIWCg5vcHRpb25hbF9pbnQzMhgBIAEoBRIWCg5v",
             "cHRpb25hbF9pbnQ2NBgCIAEoAxIXCg9vcHRpb25hbF91aW50MzIYAyABKA0S",
             "FwoPb3B0aW9uYWxfdWludDY0GAQgASgEEhcKD29wdGlvbmFsX3NpbnQzMhgF",
@@ -227,12 +227,13 @@ namespace ProtobufTestMessages.Proto3 {
             "A0JBUhABEgcKA0JBWhACEhAKA05FRxD///////////8BIlkKC0FsaWFzZWRF",
             "bnVtEg0KCUFMSUFTX0ZPTxAAEg0KCUFMSUFTX0JBUhABEg0KCUFMSUFTX0JB",
             "WhACEgcKA01PTxACEgcKA21vbxACEgcKA2JBehACGgIQAUINCgtvbmVvZl9m",
-            "aWVsZEoGCPUDEP8DIhsKDkZvcmVpZ25NZXNzYWdlEgkKAWMYASABKAUiFgoU",
-            "TnVsbEh5cG90aGVzaXNQcm90bzMiLwoORW51bU9ubHlQcm90bzMiHQoEQm9v",
-            "bBIKCgZrRmFsc2UQABIJCgVrVHJ1ZRABKkAKC0ZvcmVpZ25FbnVtEg8KC0ZP",
-            "UkVJR05fRk9PEAASDwoLRk9SRUlHTl9CQVIQARIPCgtGT1JFSUdOX0JBWhAC",
-            "QjgKKGNvbS5nb29nbGUucHJvdG9idWZfdGVzdF9tZXNzYWdlcy5wcm90bzNI",
-            "AfgBAaICBlByb3RvM2IGcHJvdG8z"));
+            "aWVsZEoGCPUDEP8DSggIv4Q9EMCEPVIOcmVzZXJ2ZWRfZmllbGQiGwoORm9y",
+            "ZWlnbk1lc3NhZ2USCQoBYxgBIAEoBSIWChROdWxsSHlwb3RoZXNpc1Byb3Rv",
+            "MyIvCg5FbnVtT25seVByb3RvMyIdCgRCb29sEgoKBmtGYWxzZRAAEgkKBWtU",
+            "cnVlEAEqQAoLRm9yZWlnbkVudW0SDwoLRk9SRUlHTl9GT08QABIPCgtGT1JF",
+            "SUdOX0JBUhABEg8KC0ZPUkVJR05fQkFaEAJCOAooY29tLmdvb2dsZS5wcm90",
+            "b2J1Zl90ZXN0X21lc3NhZ2VzLnByb3RvM0gB+AEBogIGUHJvdG8zYgZwcm90",
+            "bzM="));
       descriptor = pbr::FileDescriptor.FromGeneratedCode(descriptorData,
           new pbr::FileDescriptor[] { global::Google.Protobuf.WellKnownTypes.AnyReflection.Descriptor, global::Google.Protobuf.WellKnownTypes.DurationReflection.Descriptor, global::Google.Protobuf.WellKnownTypes.FieldMaskReflection.Descriptor, global::Google.Protobuf.WellKnownTypes.StructReflection.Descriptor, global::Google.Protobuf.WellKnownTypes.TimestampReflection.Descriptor, global::Google.Protobuf.WellKnownTypes.WrappersReflection.Descriptor, },
           new pbr::GeneratedClrTypeInfo(new[] {typeof(global::ProtobufTestMessages.Proto3.ForeignEnum), }, null, new pbr::GeneratedClrTypeInfo[] {
@@ -265,6 +266,7 @@ namespace ProtobufTestMessages.Proto3 {
   /// could trigger bugs that occur in any message type in this file.  We verify
   /// this stays true in a unit test.
   /// </summary>
+  [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
   public sealed partial class TestAllTypesProto3 : pb::IMessage<TestAllTypesProto3>
   #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
       , pb::IBufferMessage
@@ -487,6 +489,7 @@ namespace ProtobufTestMessages.Proto3 {
     private int optionalInt32_;
     /// <summary>
     /// Singular
+    /// test [kotlin] comment
     /// </summary>
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
@@ -4099,7 +4102,11 @@ namespace ProtobufTestMessages.Proto3 {
     #else
       uint tag;
       while ((tag = input.ReadTag()) != 0) {
-        switch(tag) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
           default:
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, input);
             break;
@@ -4822,7 +4829,11 @@ namespace ProtobufTestMessages.Proto3 {
     void pb::IBufferMessage.InternalMergeFrom(ref pb::ParseContext input) {
       uint tag;
       while ((tag = input.ReadTag()) != 0) {
-        switch(tag) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
           default:
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, ref input);
             break;
@@ -5563,6 +5574,7 @@ namespace ProtobufTestMessages.Proto3 {
         [pbr::OriginalName("bAz", PreferredAlias = false)] BAz = 2,
       }
 
+      [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
       public sealed partial class NestedMessage : pb::IMessage<NestedMessage>
       #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
           , pb::IBufferMessage
@@ -5750,7 +5762,11 @@ namespace ProtobufTestMessages.Proto3 {
         #else
           uint tag;
           while ((tag = input.ReadTag()) != 0) {
-            switch(tag) {
+          if ((tag & 7) == 4) {
+            // Abort on any end group tag.
+            return;
+          }
+          switch(tag) {
               default:
                 _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, input);
                 break;
@@ -5776,7 +5792,11 @@ namespace ProtobufTestMessages.Proto3 {
         void pb::IBufferMessage.InternalMergeFrom(ref pb::ParseContext input) {
           uint tag;
           while ((tag = input.ReadTag()) != 0) {
-            switch(tag) {
+          if ((tag & 7) == 4) {
+            // Abort on any end group tag.
+            return;
+          }
+          switch(tag) {
               default:
                 _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, ref input);
                 break;
@@ -5803,6 +5823,7 @@ namespace ProtobufTestMessages.Proto3 {
 
   }
 
+  [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
   public sealed partial class ForeignMessage : pb::IMessage<ForeignMessage>
   #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
       , pb::IBufferMessage
@@ -5958,7 +5979,11 @@ namespace ProtobufTestMessages.Proto3 {
     #else
       uint tag;
       while ((tag = input.ReadTag()) != 0) {
-        switch(tag) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
           default:
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, input);
             break;
@@ -5977,7 +6002,11 @@ namespace ProtobufTestMessages.Proto3 {
     void pb::IBufferMessage.InternalMergeFrom(ref pb::ParseContext input) {
       uint tag;
       while ((tag = input.ReadTag()) != 0) {
-        switch(tag) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
           default:
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, ref input);
             break;
@@ -5992,6 +6021,7 @@ namespace ProtobufTestMessages.Proto3 {
 
   }
 
+  [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
   public sealed partial class NullHypothesisProto3 : pb::IMessage<NullHypothesisProto3>
   #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
       , pb::IBufferMessage
@@ -6118,7 +6148,11 @@ namespace ProtobufTestMessages.Proto3 {
     #else
       uint tag;
       while ((tag = input.ReadTag()) != 0) {
-        switch(tag) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
           default:
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, input);
             break;
@@ -6133,7 +6167,11 @@ namespace ProtobufTestMessages.Proto3 {
     void pb::IBufferMessage.InternalMergeFrom(ref pb::ParseContext input) {
       uint tag;
       while ((tag = input.ReadTag()) != 0) {
-        switch(tag) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
           default:
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, ref input);
             break;
@@ -6144,6 +6182,7 @@ namespace ProtobufTestMessages.Proto3 {
 
   }
 
+  [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
   public sealed partial class EnumOnlyProto3 : pb::IMessage<EnumOnlyProto3>
   #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
       , pb::IBufferMessage
@@ -6270,7 +6309,11 @@ namespace ProtobufTestMessages.Proto3 {
     #else
       uint tag;
       while ((tag = input.ReadTag()) != 0) {
-        switch(tag) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
           default:
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, input);
             break;
@@ -6285,7 +6328,11 @@ namespace ProtobufTestMessages.Proto3 {
     void pb::IBufferMessage.InternalMergeFrom(ref pb::ParseContext input) {
       uint tag;
       while ((tag = input.ReadTag()) != 0) {
-        switch(tag) {
+      if ((tag & 7) == 4) {
+        // Abort on any end group tag.
+        return;
+      }
+      switch(tag) {
           default:
             _unknownFields = pb::UnknownFieldSet.MergeFieldFrom(_unknownFields, ref input);
             break;

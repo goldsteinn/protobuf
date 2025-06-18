@@ -36,8 +36,11 @@ import com.google.protobuf.ByteString;
 import com.google.protobuf.DescriptorProtos.FieldDescriptorProto;
 import com.google.protobuf.Descriptors.FieldDescriptor;
 import java.math.BigInteger;
+import org.jcodings.Encoding;
 import org.jcodings.specific.ASCIIEncoding;
+import org.jcodings.specific.UTF8Encoding;
 import org.jruby.*;
+import org.jruby.common.RubyWarnings;
 import org.jruby.exceptions.RaiseException;
 import org.jruby.ext.bigdecimal.RubyBigDecimal;
 import org.jruby.runtime.Block;
@@ -141,12 +144,12 @@ public class Utils {
           throw createInvalidTypeError(context, "boolean", fieldName, value);
         break;
       case BYTES:
-        value = validateAndEncodeString(context, "bytes", fieldName, value, "Encoding::ASCII_8BIT");
+        value = validateAndEncodeString(context, "bytes", fieldName, value, ASCIIEncoding.INSTANCE);
         break;
       case STRING:
         value =
             validateAndEncodeString(
-                context, "string", fieldName, symToString(value), "Encoding::UTF_8");
+                context, "string", fieldName, symToString(value), UTF8Encoding.INSTANCE);
         break;
       case MESSAGE:
         if (value.getMetaClass() != typeClass) {
@@ -328,6 +331,15 @@ public class Utils {
         && fieldDescriptor.getMessageType().getOptions().getMapEntry();
   }
 
+  public static RaiseException createInvalidByteSequenceError(
+      ThreadContext context, String message) {
+    if (cInvalidByteSequenceError == null) {
+      cInvalidByteSequenceError =
+          (RubyClass) context.runtime.getClassFromPath("Encoding::InvalidByteSequenceError");
+    }
+    return RaiseException.from(context.runtime, cInvalidByteSequenceError, message);
+  }
+
   public static RaiseException createTypeError(ThreadContext context, String message) {
     if (cTypeError == null) {
       cTypeError = (RubyClass) context.runtime.getClassFromPath("Google::Protobuf::TypeError");
@@ -383,11 +395,20 @@ public class Utils {
       String fieldType,
       String fieldName,
       IRubyObject value,
-      String encoding) {
+      Encoding encoding) {
     if (!(value instanceof RubyString))
       throw createInvalidTypeError(context, fieldType, fieldName, value);
 
-    value = ((RubyString) value).encode(context, context.runtime.evalScriptlet(encoding));
+    RubyString string = (RubyString) value;
+    if (encoding == UTF8Encoding.INSTANCE && string.getEncoding().isUTF8()) {
+      if (string.isCodeRangeBroken()) {
+        throw createInvalidByteSequenceError(context, "String is invalid UTF-8.");
+      }
+    }
+
+    value =
+        string.encode(
+            context, context.runtime.getEncodingService().convertEncodingToRubyEncoding(encoding));
     value.setFrozen(true);
     return value;
   }
@@ -407,4 +428,5 @@ public class Utils {
   private static final long UINT_MAX = 0xffffffffl;
 
   private static RubyClass cTypeError;
+  private static RubyClass cInvalidByteSequenceError;
 }

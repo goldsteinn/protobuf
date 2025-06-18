@@ -1,32 +1,9 @@
 // Protocol Buffers - Google's data interchange format
 // Copyright 2008 Google Inc.  All rights reserved.
-// https://developers.google.com/protocol-buffers/
 //
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-// notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-// copyright notice, this list of conditions and the following disclaimer
-// in the documentation and/or other materials provided with the
-// distribution.
-//     * Neither the name of Google Inc. nor the names of its
-// contributors may be used to endorse or promote products derived from
-// this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file or at
+// https://developers.google.com/open-source/licenses/bsd
 
 // Author: anuraag@google.com (Anuraag Agrawal)
 // Author: tibell@google.com (Johan Tibell)
@@ -57,6 +34,7 @@ namespace repeated_scalar_container {
 
 static int InternalAssignRepeatedField(RepeatedScalarContainer* self,
                                        PyObject* list) {
+  cmessage::AssureWritable(self->parent);
   Message* message = self->parent->message;
   message->GetReflection()->ClearField(message, self->parent_field_descriptor);
   for (Py_ssize_t i = 0; i < PyList_GET_SIZE(list); ++i) {
@@ -465,14 +443,6 @@ static int AssSubscript(PyObject* pself, PyObject* slice, PyObject* value) {
 PyObject* Extend(RepeatedScalarContainer* self, PyObject* value) {
   cmessage::AssureWritable(self->parent);
 
-  // TODO(ptucker): Deprecate this behavior. b/18413862
-  if (value == Py_None) {
-    Py_RETURN_NONE;
-  }
-  if ((Py_TYPE(value)->tp_as_sequence == nullptr) && PyObject_Not(value)) {
-    Py_RETURN_NONE;
-  }
-
   ScopedPyObjectPtr iter(PyObject_GetIter(value));
   if (iter == nullptr) {
     PyErr_SetString(PyExc_TypeError, "Value must be iterable");
@@ -589,6 +559,9 @@ static PyObject* Sort(PyObject* pself, PyObject* args, PyObject* kwds) {
   if (list == nullptr) {
     return nullptr;
   }
+  if (PyList_GET_SIZE(list.get()) == 0) {
+    Py_RETURN_NONE;
+  }
   ScopedPyObjectPtr m(PyObject_GetAttrString(list.get(), "sort"));
   if (m == nullptr) {
     return nullptr;
@@ -623,6 +596,17 @@ static PyObject* Reverse(PyObject* pself) {
   if (ret < 0) {
     return nullptr;
   }
+  Py_RETURN_NONE;
+}
+
+static PyObject* Clear(PyObject* pself) {
+  RepeatedScalarContainer* self =
+      reinterpret_cast<RepeatedScalarContainer*>(pself);
+  CMessage* cmessage = self->parent;
+  cmessage::AssureWritable(cmessage);
+  Message* message = cmessage->message;
+  const FieldDescriptor* field_descriptor = self->parent_field_descriptor;
+  message->GetReflection()->ClearField(message, field_descriptor);
   Py_RETURN_NONE;
 }
 
@@ -720,6 +704,8 @@ static PyMethodDef Methods[] = {
      "Sorts the repeated container."},
     {"reverse", reinterpret_cast<PyCFunction>(Reverse), METH_NOARGS,
      "Reverses elements order of the repeated container."},
+    {"clear", reinterpret_cast<PyCFunction>(Clear), METH_NOARGS,
+     "Clears the repeated container."},
     {"MergeFrom", static_cast<PyCFunction>(MergeFrom), METH_O,
      "Merges a repeated container into the current container."},
     {nullptr, nullptr}};

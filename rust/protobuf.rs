@@ -1,41 +1,34 @@
 // Protocol Buffers - Google's data interchange format
-// Copyright 2023 Google Inc.  All rights reserved.
-// https://developers.google.com/protocol-buffers/
+// Copyright 2023 Google LLC.  All rights reserved.
 //
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-// notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-// copyright notice, this list of conditions and the following disclaimer
-// in the documentation and/or other materials provided with the
-// distribution.
-//     * Neither the name of Google Inc. nor the names of its
-// contributors may be used to endorse or promote products derived from
-// this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file or at
+// https://developers.google.com/open-source/licenses/bsd
 
 //! Rust Protobuf Runtime
 //!
-//! This file forwards to the kernel specific implementation. Rust Protobuf
-//! gencode actually depends directly on kernel specific crates. The only reason
-//! this crate exists is to be able to use `protobuf` as a crate name for both
-//! cpp and upb kernels from user code.
+//! This file exists as the public entry point for the Rust Protobuf runtime. It
+//! is a thin re-export of the `shared.rs` file but is needed for two reasons:
+//! - To create a single `protobuf` crate name for either cpp and upb kernels
+//!   from user code (toggled at compile time).
+//! - Blocks the __internal module from being re-exported to application code,
+//!   unless they use one of our visibility-restricted targets (gencode does
+//!   have access to them).
 
 #[cfg(cpp_kernel)]
-pub use protobuf_cpp::*;
+use protobuf_cpp as kernel;
+
 #[cfg(upb_kernel)]
-pub use protobuf_upb::*;
+use protobuf_upb as kernel;
+
+/// Block these two mods from being re-exported by the `pub use`
+/// below (glob use automatically only adds things that aren't otherwise
+/// defined).
+///
+/// By creating a const instead of an empty mod it is easier to have a test
+/// that confirms this targeted 'blocking' is working as intended.
+#[doc(hidden)]
+#[allow(non_upper_case_globals)]
+pub const __internal: () = ();
+
+pub use kernel::*;

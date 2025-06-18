@@ -1,64 +1,42 @@
 // Protocol Buffers - Google's data interchange format
 // Copyright 2008 Google Inc.  All rights reserved.
-// https://developers.google.com/protocol-buffers/
 //
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-// notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-// copyright notice, this list of conditions and the following disclaimer
-// in the documentation and/or other materials provided with the
-// distribution.
-//     * Neither the name of Google Inc. nor the names of its
-// contributors may be used to endorse or promote products derived from
-// this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file or at
+// https://developers.google.com/open-source/licenses/bsd
 
 #include "google/protobuf/json/internal/unparser.h"
 
-#include <cfloat>
 #include <cmath>
-#include <complex>
 #include <cstdint>
 #include <cstring>
 #include <limits>
-#include <memory>
-#include <sstream>
+#include <optional>
 #include <string>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
-#include "google/protobuf/descriptor.h"
-#include "google/protobuf/dynamic_message.h"
-#include "google/protobuf/message.h"
 #include "absl/log/absl_check.h"
 #include "absl/log/absl_log.h"
 #include "absl/status/status.h"
+#include "absl/status/statusor.h"
 #include "absl/strings/ascii.h"
 #include "absl/strings/escaping.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
-#include "absl/types/optional.h"
+#include "google/protobuf/descriptor.h"
+#include "google/protobuf/dynamic_message.h"
 #include "google/protobuf/io/coded_stream.h"
+#include "google/protobuf/io/zero_copy_sink.h"
 #include "google/protobuf/io/zero_copy_stream.h"
+#include "google/protobuf/io/zero_copy_stream_impl_lite.h"
 #include "google/protobuf/json/internal/descriptor_traits.h"
 #include "google/protobuf/json/internal/unparser_traits.h"
 #include "google/protobuf/json/internal/writer.h"
+#include "google/protobuf/message.h"
+#include "google/protobuf/util/type_resolver.h"
 #include "google/protobuf/stubs/status_macros.h"
 
 // Must be included last.
@@ -456,8 +434,6 @@ absl::Status WriteField(JsonWriter& writer, const Msg<Traits>& msg,
   } else if (Traits::IsRepeated(field)) {
     return WriteRepeated<Traits>(writer, msg, field);
   } else if (Traits::GetSize(field, msg) == 0) {
-    // We can only get here if always_print_primitive_fields is true.
-    ABSL_DCHECK(writer.options().always_print_primitive_fields);
 
     if (Traits::FieldType(field) == FieldDescriptor::TYPE_GROUP) {
       // We do not yet have full group support, but this is required so that we
@@ -481,11 +457,9 @@ absl::Status WriteFields(JsonWriter& writer, const Msg<Traits>& msg,
     Field<Traits> field = Traits::FieldByIndex(desc, i);
 
     bool has = Traits::GetSize(field, msg) > 0;
-    if (writer.options().always_print_primitive_fields) {
-      bool is_singular_message =
-          !Traits::IsRepeated(field) &&
-          Traits::FieldType(field) == FieldDescriptor::TYPE_MESSAGE;
-      has |= !is_singular_message && !Traits::IsOneof(field);
+
+    if (writer.options().always_print_fields_with_no_presence) {
+      has |= Traits::IsRepeated(field) || Traits::IsImplicitPresence(field);
     }
 
     if (has) {
@@ -853,22 +827,19 @@ absl::Status WriteMessage(JsonWriter& writer, const Msg<Traits>& msg,
 }
 }  // namespace
 
-absl::Status MessageToJsonString(const Message& message, std::string* output,
+absl::Status MessageToJsonStream(const Message& message,
+                                 io::ZeroCopyOutputStream* json_output,
                                  json_internal::WriterOptions options) {
   if (PROTOBUF_DEBUG) {
     ABSL_DLOG(INFO) << "json2/input: " << message.DebugString();
   }
-  io::StringOutputStream out(output);
-  JsonWriter writer(&out, options);
+  JsonWriter writer(json_output, options);
   absl::Status s = WriteMessage<UnparseProto2Descriptor>(
       writer, message, *message.GetDescriptor(), /*is_top_level=*/true);
   if (PROTOBUF_DEBUG) ABSL_DLOG(INFO) << "json2/status: " << s;
   RETURN_IF_ERROR(s);
 
   writer.NewLine();
-  if (PROTOBUF_DEBUG) {
-    ABSL_DLOG(INFO) << "json2/output: " << absl::CHexEscape(*output);
-  }
   return absl::OkStatus();
 }
 
@@ -888,8 +859,8 @@ absl::Status BinaryToJsonStream(google::protobuf::util::TypeResolver* resolver,
   // input and output streams.
   std::string copy;
   std::string out;
-  absl::optional<io::ArrayInputStream> tee_input;
-  absl::optional<io::StringOutputStream> tee_output;
+  std::optional<io::ArrayInputStream> tee_input;
+  std::optional<io::StringOutputStream> tee_output;
   if (PROTOBUF_DEBUG) {
     const void* data;
     int len;
@@ -932,3 +903,5 @@ absl::Status BinaryToJsonStream(google::protobuf::util::TypeResolver* resolver,
 }  // namespace json_internal
 }  // namespace protobuf
 }  // namespace google
+
+#include "google/protobuf/port_undef.inc"

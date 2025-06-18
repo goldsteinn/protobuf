@@ -1,32 +1,9 @@
 // Protocol Buffers - Google's data interchange format
 // Copyright 2008 Google Inc.  All rights reserved.
-// https://developers.google.com/protocol-buffers/
 //
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-// notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-// copyright notice, this list of conditions and the following disclaimer
-// in the documentation and/or other materials provided with the
-// distribution.
-//     * Neither the name of Google Inc. nor the names of its
-// contributors may be used to endorse or promote products derived from
-// this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file or at
+// https://developers.google.com/open-source/licenses/bsd
 
 #ifndef GOOGLE_PROTOBUF_COMPILER_JAVA_NAME_RESOLVER_H__
 #define GOOGLE_PROTOBUF_COMPILER_JAVA_NAME_RESOLVER_H__
@@ -39,6 +16,7 @@
 
 // Must be last.
 #include "google/protobuf/port_def.inc"
+
 
 namespace google {
 namespace protobuf {
@@ -57,7 +35,7 @@ enum NameEquality { NO_MATCH, EXACT_EQUAL, EQUAL_IGNORE_CASE };
 // Used to get the Java class related names for a given descriptor. It caches
 // the results to avoid redundant calculation across multiple name queries.
 // Thread-safety note: This class is *not* thread-safe.
-class ClassNameResolver {
+class PROTOC_EXPORT ClassNameResolver {
  public:
   explicit ClassNameResolver(const Options& options = {}) : options_(options) {}
   ~ClassNameResolver() = default;
@@ -73,13 +51,14 @@ class ClassNameResolver {
   std::string GetFileImmutableClassName(const FileDescriptor* file);
   // Gets the unqualified default immutable outer class name of a file
   // (converted from the proto file's name).
-  std::string GetFileDefaultImmutableClassName(const FileDescriptor* file);
+  static std::string GetFileDefaultImmutableClassName(
+      const FileDescriptor* file);
 
   // Check whether there is any type defined in the proto file that has
   // the given class name.
-  bool HasConflictingClassName(const FileDescriptor* file,
-                               absl::string_view classname,
-                               NameEquality equality_mode);
+  static bool HasConflictingClassName(const FileDescriptor* file,
+                                      absl::string_view classname,
+                                      NameEquality equality_mode);
 
   // Gets the name of the outer class that holds descriptor information.
   // Descriptors are shared between immutable messages and mutable messages.
@@ -105,10 +84,6 @@ class ClassNameResolver {
   std::string GetImmutableClassName(const DescriptorType* descriptor) {
     return GetClassName(descriptor, true);
   }
-  template <class DescriptorType>
-  std::string GetMutableClassName(const DescriptorType* descriptor) {
-    return GetClassName(descriptor, false);
-  }
 
   // Gets the fully qualified name of an extension identifier.
   std::string GetExtensionIdentifierName(const FieldDescriptor* descriptor,
@@ -122,13 +97,11 @@ class ClassNameResolver {
   //   com.package.OuterClass$OuterMessage$InnerMessage
   std::string GetJavaImmutableClassName(const Descriptor* descriptor);
   std::string GetJavaImmutableClassName(const EnumDescriptor* descriptor);
+  std::string GetJavaImmutableClassName(const ServiceDescriptor* descriptor);
   std::string GetKotlinFactoryName(const Descriptor* descriptor);
   std::string GetKotlinExtensionsClassName(const Descriptor* descriptor);
-  std::string GetJavaMutableClassName(const Descriptor* descriptor);
-  std::string GetJavaMutableClassName(const EnumDescriptor* descriptor);
-  // Gets the outer class and the actual class for downgraded mutable messages.
-  std::string GetDowngradedFileClassName(const FileDescriptor* file);
-  std::string GetDowngradedClassName(const Descriptor* descriptor);
+  std::string GetKotlinExtensionsClassNameEscaped(const Descriptor* descriptor);
+  std::string GetFileJavaPackage(const FileDescriptor* file, bool immutable);
 
   // Get the full name of a Java class by prepending the Java package name
   // or outer class name.
@@ -143,14 +116,18 @@ class ClassNameResolver {
 
  private:
   // Get the Java Class style full name of a message.
+  template <typename Descriptor>
   std::string GetJavaClassFullName(absl::string_view name_without_package,
-                                   const FileDescriptor* file, bool immutable);
+                                   const Descriptor& descriptor,
+                                   bool immutable);
+  template <typename Descriptor>
   std::string GetJavaClassFullName(absl::string_view name_without_package,
-                                   const FileDescriptor* file, bool immutable,
+                                   const Descriptor& descriptor, bool immutable,
                                    bool kotlin);
-  // Caches the result to provide better performance.
-  absl::flat_hash_map<const FileDescriptor*, std::string>
-      file_immutable_outer_class_names_;
+
+  template <typename Descriptor>
+  std::string GetJavaClassPackage(const Descriptor& descriptor, bool immutable);
+
 };
 
 }  // namespace java

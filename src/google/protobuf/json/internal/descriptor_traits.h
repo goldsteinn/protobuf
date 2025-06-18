@@ -1,32 +1,9 @@
 // Protocol Buffers - Google's data interchange format
 // Copyright 2008 Google Inc.  All rights reserved.
-// https://developers.google.com/protocol-buffers/
 //
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-// notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-// copyright notice, this list of conditions and the following disclaimer
-// in the documentation and/or other materials provided with the
-// distribution.
-//     * Neither the name of Google Inc. nor the names of its
-// contributors may be used to endorse or promote products derived from
-// this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file or at
+// https://developers.google.com/open-source/licenses/bsd
 
 #ifndef GOOGLE_PROTOBUF_JSON_INTERNAL_DESCRIPTOR_TRAITS_H__
 #define GOOGLE_PROTOBUF_JSON_INTERNAL_DESCRIPTOR_TRAITS_H__
@@ -37,13 +14,11 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <optional>
 #include <string>
 #include <utility>
 
 #include "google/protobuf/type.pb.h"
-#include "google/protobuf/descriptor.h"
-#include "google/protobuf/dynamic_message.h"
-#include "google/protobuf/message.h"
 #include "absl/algorithm/container.h"
 #include "absl/log/absl_log.h"
 #include "absl/status/status.h"
@@ -51,9 +26,11 @@
 #include "absl/strings/match.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
-#include "absl/types/optional.h"
+#include "google/protobuf/descriptor.h"
+#include "google/protobuf/dynamic_message.h"
 #include "google/protobuf/json/internal/lexer.h"
 #include "google/protobuf/json/internal/untyped_message.h"
+#include "google/protobuf/message.h"
 #include "google/protobuf/stubs/status_macros.h"
 
 
@@ -167,11 +144,11 @@ struct Proto2Descriptor {
 
   static absl::string_view TypeName(const Desc& d) { return d.full_name(); }
 
-  static absl::optional<Field> FieldByNumber(const Desc& d, int32_t number) {
+  static std::optional<Field> FieldByNumber(const Desc& d, int32_t number) {
     if (const auto* field = d.FindFieldByNumber(number)) {
       return field;
     }
-    return absl::nullopt;
+    return std::nullopt;
   }
 
   static Field MustHaveField(const Desc& d, int32_t number,
@@ -189,8 +166,8 @@ struct Proto2Descriptor {
     return *f;
   }
 
-  static absl::optional<Field> FieldByName(const Desc& d,
-                                           absl::string_view name) {
+  static std::optional<Field> FieldByName(const Desc& d,
+                                          absl::string_view name) {
     if (const auto* field = d.FindFieldByCamelcaseName(name)) {
       return field;
     }
@@ -206,7 +183,7 @@ struct Proto2Descriptor {
       }
     }
 
-    return absl::nullopt;
+    return std::nullopt;
   }
 
   static Field KeyField(const Desc& d) { return d.map_key(); }
@@ -217,11 +194,11 @@ struct Proto2Descriptor {
 
   static Field FieldByIndex(const Desc& d, size_t idx) { return d.field(idx); }
 
-  static absl::optional<Field> ExtensionByName(const Desc& d,
-                                               absl::string_view name) {
+  static std::optional<Field> ExtensionByName(const Desc& d,
+                                              absl::string_view name) {
     auto* field = d.file()->pool()->FindExtensionByName(name);
     if (field == nullptr) {
-      return absl::nullopt;
+      return std::nullopt;
     }
     return field;
   }
@@ -266,7 +243,7 @@ struct Proto2Descriptor {
 
   static bool IsRepeated(Field f) { return f->is_repeated(); }
 
-  static bool IsOptional(Field f) { return f->has_presence(); }
+  static bool IsExplicitPresence(Field f) { return f->has_presence(); }
 
   static bool IsImplicitPresence(Field f) {
     return !f->is_repeated() && !f->has_presence();
@@ -300,7 +277,7 @@ struct Proto2Descriptor {
 
   static absl::StatusOr<std::string> EnumNameByNumber(Field f, int32_t number) {
     if (const auto* ev = f->enum_type()->FindValueByNumber(number)) {
-      return ev->name();
+      return std::string(ev->name());
     }
     return absl::InvalidArgumentError(
         absl::StrFormat("unknown enum number: '%d'", number));
@@ -350,9 +327,9 @@ struct Proto3Type {
   /// Functions for working with descriptors. ///
   static absl::string_view TypeName(const Desc& d) { return d.proto().name(); }
 
-  static absl::optional<Field> FieldByNumber(const Desc& d, int32_t number) {
+  static std::optional<Field> FieldByNumber(const Desc& d, int32_t number) {
     const auto* f = d.FindField(number);
-    return f == nullptr ? absl::nullopt : absl::make_optional(f);
+    return f == nullptr ? std::nullopt : std::make_optional(f);
   }
 
   static Field MustHaveField(const Desc& d, int32_t number,
@@ -370,10 +347,10 @@ struct Proto3Type {
     return *f;
   }
 
-  static absl::optional<Field> FieldByName(const Desc& d,
-                                           absl::string_view name) {
+  static std::optional<Field> FieldByName(const Desc& d,
+                                          absl::string_view name) {
     const auto* f = d.FindField(name);
-    return f == nullptr ? absl::nullopt : absl::make_optional(f);
+    return f == nullptr ? std::nullopt : std::make_optional(f);
   }
 
   static Field KeyField(const Desc& d) { return &d.FieldsByIndex()[0]; }
@@ -386,11 +363,11 @@ struct Proto3Type {
     return &d.FieldsByIndex()[idx];
   }
 
-  static absl::optional<Field> ExtensionByName(const Desc& d,
-                                               absl::string_view name) {
+  static std::optional<Field> ExtensionByName(const Desc& d,
+                                              absl::string_view name) {
     // type.proto cannot represent extensions, so this function always
     // fails.
-    return absl::nullopt;
+    return std::nullopt;
   }
 
   /// Functions for introspecting fields. ///
@@ -453,12 +430,17 @@ struct Proto3Type {
            google::protobuf::Field::CARDINALITY_REPEATED;
   }
 
-  static bool IsOptional(Field f) {
-    // Implicit presence requires this weird check: in proto3, everything is
-    // implicit presence, except for things that are members of oneofs,
-    // which is how proto3 optional is represented.
+  static bool IsExplicitPresence(Field f) {
+    // Implicit presence requires this weird check: in proto3 the following
+    // cases support presence:
+    // 1) Anything contained in a oneof (including things explicitly declared
+    //    'optional' which are represented as as synthetic oneof in proto3).
+    // 2) Fields that are a message type (but not map fields which are also
+    //    TYPE_MESSAGE here).
     if (f->parent().proto().syntax() == google::protobuf::SYNTAX_PROTO3) {
-      return f->proto().oneof_index() != 0;
+      return f->proto().oneof_index() != 0 ||
+             (f->proto().kind() == google::protobuf::Field::TYPE_MESSAGE &&
+              !IsRepeated(f));
     }
 
     return f->proto().cardinality() ==
@@ -467,7 +449,7 @@ struct Proto3Type {
   }
 
   static bool IsImplicitPresence(Field f) {
-    return !IsRepeated(f) && !IsOptional(f);
+    return !IsRepeated(f) && !IsExplicitPresence(f);
   }
 
   static bool IsExtension(Field f) { return false; }
@@ -527,4 +509,4 @@ struct Proto3Type {
 }  // namespace google
 
 #include "google/protobuf/port_undef.inc"
-#endif  // GOOGLE_PROTOBUF_JSON_INTERNAL_DESCRIPTOR_TRAITS_INTERNAL_H__
+#endif  // GOOGLE_PROTOBUF_JSON_INTERNAL_DESCRIPTOR_TRAITS_H__

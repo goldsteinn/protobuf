@@ -1,44 +1,27 @@
 // Protocol Buffers - Google's data interchange format
 // Copyright 2008 Google Inc.  All rights reserved.
-// https://developers.google.com/protocol-buffers/
 //
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-// notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-// copyright notice, this list of conditions and the following disclaimer
-// in the documentation and/or other materials provided with the
-// distribution.
-//     * Neither the name of Google Inc. nor the names of its
-// contributors may be used to endorse or promote products derived from
-// this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file or at
+// https://developers.google.com/open-source/licenses/bsd
 
 #include "google/protobuf/compiler/java/name_resolver.h"
 
+#include <cstddef>
 #include <string>
 
 #include "absl/log/absl_check.h"
 #include "absl/strings/ascii.h"
+#include "absl/strings/match.h"
+#include "absl/strings/str_cat.h"
 #include "absl/strings/str_replace.h"
-#include "absl/strings/substitute.h"
+#include "absl/strings/string_view.h"
+#include "google/protobuf/compiler/java/java_features.pb.h"
 #include "google/protobuf/compiler/code_generator.h"
+#include "google/protobuf/compiler/java/generator.h"
 #include "google/protobuf/compiler/java/helpers.h"
 #include "google/protobuf/compiler/java/names.h"
+#include "google/protobuf/descriptor.h"
 
 
 // Must be last.
@@ -53,6 +36,11 @@ namespace {
 // A suffix that will be appended to the file's outer class name if the name
 // conflicts with some other types defined in the file.
 const char* kOuterClassNameSuffix = "OuterClass";
+
+inline bool UseOldFileClassNameDefault(const FileDescriptor* file) {
+  return JavaGenerator::GetResolvedSourceFeatureExtension(*file, pb::java)
+      .use_old_outer_classname_default();
+}
 
 // Strip package name from a descriptor's full name.
 // For example:
@@ -77,7 +65,7 @@ std::string ClassNameWithoutPackage(const Descriptor* descriptor,
 }
 
 std::string ClassNameWithoutPackageKotlin(const Descriptor* descriptor) {
-  std::string result = descriptor->name();
+  std::string result = std::string(descriptor->name());
   const Descriptor* temp = descriptor->containing_type();
 
   while (temp) {
@@ -92,8 +80,8 @@ std::string ClassNameWithoutPackage(const EnumDescriptor* descriptor,
                                     bool immutable) {
   // Doesn't append "Mutable" for enum type's name.
   const Descriptor* message_descriptor = descriptor->containing_type();
-  if (message_descriptor == NULL) {
-    return descriptor->name();
+  if (message_descriptor == nullptr) {
+    return std::string(descriptor->name());
   } else {
     return absl::StrCat(ClassNameWithoutPackage(message_descriptor, immutable),
                         ".", descriptor->name());
@@ -145,34 +133,56 @@ bool MessageHasConflictingClassName(const Descriptor* message,
 
 }  // namespace
 
+class MemoizeProjection {
+ public:
+  template <typename Desc, typename Func>
+  const auto& operator()(const Desc* descriptor, Func func) {
+    return DescriptorPool::MemoizeProjection(descriptor, func);
+  }
+};
+
+bool ComputeNeedsOuterClassSuffix(const FileDescriptor* file) {
+  if (!UseOldFileClassNameDefault(file)) return false;
+  return ClassNameResolver::HasConflictingClassName(
+      file, ClassNameResolver::GetFileDefaultImmutableClassName(file),
+      NameEquality::EXACT_EQUAL);
+}
+
+bool NeedsOuterClassSuffix(const FileDescriptor* file) {
+  return MemoizeProjection()(file, ComputeNeedsOuterClassSuffix);
+}
+
 std::string ClassNameResolver::GetFileDefaultImmutableClassName(
     const FileDescriptor* file) {
   std::string basename;
   std::string::size_type last_slash = file->name().find_last_of('/');
   if (last_slash == std::string::npos) {
-    basename = file->name();
+    basename = std::string(file->name());
   } else {
-    basename = file->name().substr(last_slash + 1);
+    basename = std::string(file->name().substr(last_slash + 1));
   }
-  return UnderscoresToCamelCase(StripProto(basename), true);
+  // foo_bar_baz.proto -> FooBarBaz
+  std::string ret = UnderscoresToCamelCase(StripProto(basename), true);
+  return UseOldFileClassNameDefault(file) ? ret : ret + "Proto";
 }
 
 std::string ClassNameResolver::GetFileImmutableClassName(
     const FileDescriptor* file) {
-  std::string& class_name = file_immutable_outer_class_names_[file];
-  if (class_name.empty()) {
-    if (file->options().has_java_outer_classname()) {
-      class_name = file->options().java_outer_classname();
-    } else {
-      class_name = GetFileDefaultImmutableClassName(file);
-      if (HasConflictingClassName(file, class_name,
-                                  NameEquality::EXACT_EQUAL)) {
-        class_name += kOuterClassNameSuffix;
-      }
-    }
+  if (file->options().has_java_outer_classname()) {
+    return file->options().java_outer_classname();
   }
+
+  std::string class_name = GetFileDefaultImmutableClassName(file);
+
+  // This disambiguation logic is deprecated and only enabled when using
+  // the old default scheme.
+  if (NeedsOuterClassSuffix(file)) {
+    absl::StrAppend(&class_name, kOuterClassNameSuffix);
+  }
+
   return class_name;
 }
+
 
 std::string ClassNameResolver::GetFileClassName(const FileDescriptor* file,
                                                 bool immutable) {
@@ -232,7 +242,7 @@ std::string ClassNameResolver::GetClassName(const FileDescriptor* descriptor,
 
 std::string ClassNameResolver::GetClassName(const FileDescriptor* descriptor,
                                             bool immutable, bool kotlin) {
-  std::string result = FileJavaPackage(descriptor, immutable, options_);
+  std::string result = GetFileJavaPackage(descriptor, immutable);
   if (!result.empty()) result += '.';
   result += GetFileClassName(descriptor, immutable, kotlin);
   return result;
@@ -252,7 +262,7 @@ std::string ClassNameResolver::GetClassFullName(
     bool immutable, bool is_own_file, bool kotlin) {
   std::string result;
   if (is_own_file) {
-    result = FileJavaPackage(file, immutable, options_);
+    result = GetFileJavaPackage(file, immutable);
   } else {
     result = GetClassName(file, immutable, kotlin);
   }
@@ -271,9 +281,9 @@ std::string ClassNameResolver::GetClassName(const Descriptor* descriptor,
 
 std::string ClassNameResolver::GetClassName(const Descriptor* descriptor,
                                             bool immutable, bool kotlin) {
-  return GetClassFullName(
-      ClassNameWithoutPackage(descriptor, immutable), descriptor->file(),
-      immutable, MultipleJavaFiles(descriptor->file(), immutable), kotlin);
+  return GetClassFullName(ClassNameWithoutPackage(descriptor, immutable),
+                          descriptor->file(), immutable,
+                          !NestedInFileClass(*descriptor, immutable), kotlin);
 }
 
 std::string ClassNameResolver::GetClassName(const EnumDescriptor* descriptor,
@@ -283,9 +293,9 @@ std::string ClassNameResolver::GetClassName(const EnumDescriptor* descriptor,
 
 std::string ClassNameResolver::GetClassName(const EnumDescriptor* descriptor,
                                             bool immutable, bool kotlin) {
-  return GetClassFullName(
-      ClassNameWithoutPackage(descriptor, immutable), descriptor->file(),
-      immutable, MultipleJavaFiles(descriptor->file(), immutable), kotlin);
+  return GetClassFullName(ClassNameWithoutPackage(descriptor, immutable),
+                          descriptor->file(), immutable,
+                          !NestedInFileClass(*descriptor, immutable), kotlin);
 }
 
 std::string ClassNameResolver::GetClassName(const ServiceDescriptor* descriptor,
@@ -300,23 +310,27 @@ std::string ClassNameResolver::GetClassName(const ServiceDescriptor* descriptor,
                           IsOwnFile(descriptor, immutable), kotlin);
 }
 
-// Get the Java Class style full name of a message.
+template <typename Descriptor>
 std::string ClassNameResolver::GetJavaClassFullName(
-    absl::string_view name_without_package, const FileDescriptor* file,
+    absl::string_view name_without_package, const Descriptor& descriptor,
     bool immutable) {
-  return GetJavaClassFullName(name_without_package, file, immutable, false);
+  return GetJavaClassFullName(name_without_package, descriptor, immutable,
+                              /*kotlin =*/false);
 }
 
+// Get the Java Class style full name of a type.
+template <typename Descriptor>
 std::string ClassNameResolver::GetJavaClassFullName(
-    absl::string_view name_without_package, const FileDescriptor* file,
+    absl::string_view name_without_package, const Descriptor& descriptor,
     bool immutable, bool kotlin) {
   std::string result;
-  if (MultipleJavaFiles(file, immutable)) {
-    result = FileJavaPackage(file, immutable, options_);
-    if (!result.empty()) result += '.';
-  } else {
+  auto file = descriptor.file();
+  if (NestedInFileClass(descriptor, immutable)) {
     result = GetClassName(file, immutable, kotlin);
     if (!result.empty()) result += '$';
+  } else {
+    result = GetFileJavaPackage(file, immutable);
+    if (!result.empty()) result += '.';
   }
   result += absl::StrReplaceAll(name_without_package, {{".", "$"}});
   return result;
@@ -343,45 +357,62 @@ std::string ClassNameResolver::GetKotlinFactoryName(
 std::string ClassNameResolver::GetJavaImmutableClassName(
     const Descriptor* descriptor) {
   return GetJavaClassFullName(ClassNameWithoutPackage(descriptor, true),
-                              descriptor->file(), true);
+                              *descriptor, true);
 }
 
 std::string ClassNameResolver::GetJavaImmutableClassName(
     const EnumDescriptor* descriptor) {
   return GetJavaClassFullName(ClassNameWithoutPackage(descriptor, true),
-                              descriptor->file(), true);
+                              *descriptor, true);
+}
+
+std::string ClassNameResolver::GetJavaImmutableClassName(
+    const ServiceDescriptor* descriptor) {
+  return GetJavaClassFullName(ClassNameWithoutPackage(descriptor, true),
+                              *descriptor, true);
 }
 
 std::string ClassNameResolver::GetKotlinExtensionsClassName(
     const Descriptor* descriptor) {
   return GetClassFullName(ClassNameWithoutPackageKotlin(descriptor),
-                          descriptor->file(), true, true, true);
+                          descriptor->file(), /*immutable=*/true,
+                          /*is_own_file=*/true,
+                          /*kotlin=*/true);
 }
 
-std::string ClassNameResolver::GetJavaMutableClassName(
+std::string ClassNameResolver::GetKotlinExtensionsClassNameEscaped(
     const Descriptor* descriptor) {
-  return GetJavaClassFullName(ClassNameWithoutPackage(descriptor, false),
-                              descriptor->file(), false);
+  std::string name_without_package = ClassNameWithoutPackageKotlin(descriptor);
+  std::string full_name = GetClassFullName(
+      name_without_package, descriptor->file(), /*immutable=*/true,
+      /*is_own_file=*/true, /*kotlin=*/true);
+  std::string name_without_package_suffix =
+      absl::StrCat(".", name_without_package, "Kt");
+  size_t package_end = full_name.rfind(name_without_package_suffix);
+  if (package_end != std::string::npos) {
+    return absl::StrCat("`", full_name.substr(0, package_end), "`",
+                        name_without_package_suffix);
+  }
+  return full_name;
 }
 
-std::string ClassNameResolver::GetJavaMutableClassName(
-    const EnumDescriptor* descriptor) {
-  return GetJavaClassFullName(ClassNameWithoutPackage(descriptor, false),
-                              descriptor->file(), false);
-}
 
-std::string ClassNameResolver::GetDowngradedFileClassName(
-    const FileDescriptor* file) {
-  return absl::StrCat("Downgraded", GetFileClassName(file, false));
-}
+std::string ClassNameResolver::GetFileJavaPackage(const FileDescriptor* file,
+                                                  bool immutable) {
+  std::string result;
 
-std::string ClassNameResolver::GetDowngradedClassName(
-    const Descriptor* descriptor) {
-  return absl::StrCat(FileJavaPackage(descriptor->file(), true, options_), ".",
-                      GetDowngradedFileClassName(descriptor->file()), ".",
-                      ClassNameWithoutPackage(descriptor, false));
-}
+  if (file->options().has_java_package()) {
+    result = file->options().java_package();
+  } else {
+    result = options_.opensource_runtime ? "" : "com.google.protos";
+    if (!file->package().empty()) {
+      if (!result.empty()) result += '.';
+      absl::StrAppend(&result, file->package());
+    }
+  }
 
+  return result;
+}
 }  // namespace java
 }  // namespace compiler
 }  // namespace protobuf
